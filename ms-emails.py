@@ -5,133 +5,174 @@
 
 import win32com.client as win32
 import time
+import sys
+
+WIDTH_ANNOUNCES = 50
+mailboxes_available = {}
+
+def main_menu():
+    print('\n' + ' MAIN MENU '.center(WIDTH_ANNOUNCES, '#'))
+    print('##  1 . Display list of mailboxes accessible')
+    print('##  2 . Export mailbox hierarchy')
+    print('##  3 . Move an email')
+    print('##  9 . Exit program')
+    
+    action = 0
+    while action not in ['1', '2', '3', '9']:
+        action = input('What do you want to do?    ')
+    print()
+    
+    if action == '1':
+        print('* Mailbox listing *')
+        list_mailboxes()
+        main_menu()
+    elif action == '2':
+        print('* Mailbox hierarchy *')
+        export_mailbox_hierarchy()
+        main_menu()
+    elif action == '3':
+        print('* Move an email *')
+        move_email()
+        main_menu()
+    elif action == '9':
+        print(''.center(WIDTH_ANNOUNCES, '#'))
+        print(' END OF PROGRAM '.center(WIDTH_ANNOUNCES, '#'))
+        print(''.center(WIDTH_ANNOUNCES, '#'))
+        time.sleep(3)
+        sys.exit()
+    return True
+
 
 def list_mailboxes():
+    global mailboxes_available
     themailboxes = dict()
     for i, folder in enumerate(win32.Dispatch("Outlook.Application").GetNamespace("MAPI").Folders, 1):
-        themailboxes[i] = folder.Name
+        themailboxes[str(i)] = folder.Name
         print(i, folder.Name)
-    return themailboxes
+    mailboxes_available = themailboxes
+    return True
 
 
-def export_mailbox_hierarchy(mailbox_name):
+def export_mailbox_hierarchy():
+    mailbox_name = ask_which_mailbox('Which mailbox hierarchy should we export (Ex: "3")?     ')
+    if not mailbox_name:
+        return False
+    print(f'Exporting hierarchy of mailbox: {mailbox_name} ...')
+    
     namespace = win32.Dispatch("Outlook.Application").GetNamespace("MAPI")
     mailbox = namespace.Folders(mailbox_name)
     
-    filename = 'Mailbox hierarchy.txt'
+    filename = f'Mailbox {mailbox_name} {time.strftime("%y.%m.%d %Hh%M")}.txt'
     with open(filename, 'w', encoding='utf-8') as f:
         f.write(recursive_menu(mailbox))
-    
-    return filename
+    print(f'Mailbox hierarchy exported to: {filename}')
+    return True
 
+
+def ask_which_mailbox(msg):
+    if len(mailboxes_available) < 1:
+        print('!!! No mailbox listing in memory, generate it first (main menu option #1).')
+        return False
+    mailbox_num = 0
+    while mailbox_num not in mailboxes_available.keys():
+        mailbox_num = input(msg)
+    return mailboxes_available[mailbox_num]
+
+
+def move_email():
+    # From ...
+    src_mailbox_name = ask_which_mailbox('Source mailbox # (ex: "3")?     ')
+    if not src_mailbox_name:
+        return False
+    namespace = win32.Dispatch("Outlook.Application").GetNamespace("MAPI")
+    src_mailbox = namespace.Folders(src_mailbox_name)
     
-def export_list_emails(target_folder):
-    filename = 'Email list.txt'
-    res = ''
+    mailbox_src_folder = input('In which folder is the email to move (Ex: "2 3 1")?     ')
+    src_folder = src_mailbox
+    try:
+        for subfolder_num in mailbox_src_folder.split():
+            src_folder = src_folder.Folders(subfolder_num)
+    except:
+        print('!!! Problem reaching source folder. Try again.')
+        return False
+    print(f'Confirmed source folder: {src_folder.Name}.')
     
-    for i, m in enumerate(target_folder.Items):
-        res += str(m.SentOn) + ' ' + str(m.SenderName) + ' || ' + str(m.Subject) + '\n'
-        if i> 100:
+    print('Printing header of a few emails:')
+    print(show_few_emails(src_folder))
+    ex_email = src_folder.Items.GetFirst().Subject
+    subject_selected = input(f'Subject of email you want to move (ex: "{ex_email}"):     ')
+    
+    # To ...
+    dst_mailbox_name = ask_which_mailbox('Destination mailbox # (ex: "3")?     ')
+    dst_namespace = win32.Dispatch("Outlook.Application").GetNamespace("MAPI")
+    dst_mailbox = dst_namespace.Folders(dst_mailbox_name)
+    
+    mailbox_dst_folder = input('In which folder should emails be moved to (ex: "2 5 1")?     ')
+    dst_folder = dst_mailbox
+    try:
+        for subfolder_num in mailbox_dst_folder.split():
+            dst_folder = dst_folder.Folders(subfolder_num)
+    except:
+        print('!!! Problem reaching destination folder. Try again.')
+        return False
+    print(f'Confirmed destination folder: {dst_folder.Name}')
+    
+    # Move it!
+    for m in src_folder.Items:
+        if m.Subject == subject_selected:
+            m.Move(dst_folder)
+            print(f'Email "{subject_selected}" moved to: {dst_folder.Name}')
             break
     
-    with open(filename, 'w', encoding='utf-8') as f:
-        f.write(res)
-    print(f'List of emails exported to: {filename}')
-    
+    return True
 
-def recursive_menu(outlookFolderItem, indent='', print_block=True, pick_email='', print_email_samples=True, move_to=None):
-    res = ''
     
+def show_few_emails(mailbox_folder, nb_items = 3):
+    res = ''
+    for i, m in enumerate(mailbox_folder.Items, 1):
+        res += f'  {str(m.SentOn)[2:19]} {m.SenderName} | {m.Subject}\n'
+        if i>=nb_items:
+            break
+    return res
+    
+    
+def recursive_menu(outlookFolderItem, indent='', print_block=True, print_email_samples=True):
+    res = ''
     if print_block:
         res += f'########## {outlookFolderItem.Name} ##########\n'
     
     # Print emails
-    if pick_email != '' or print_email_samples:
+    if print_email_samples:
         counter=0
         for m in outlookFolderItem.Items:
             counter+=1
-            if m.Subject == pick_email and pick_email != '':
-                res += f'--> EMAIL FOUND Here! ({pick_email}) <--\n'
-                if not move_to is None:
-                    res += f'--> Moving it to folder: {move_to.Name}\n'
-                    m.Move(move_to)
-                    res += '--> Email moved\n'
-                
             if print_email_samples:
                 res += indent + '(e) ' +  m.Subject + '\n'
             if counter == 3:
-                res += indent + '(e) ' + '... (Limited to 3 items)' + '\n'
+                res += indent + '(e) ...\n'
                 break
     
     # Print folders and their children
-    for i in range(0,30): # Only the first 10 folders are interesting for us here (Inbox, Sent email, etc...)
+    for i in range(0,30):
         try:
-            res += indent + f'{i}: ' + outlookFolderItem.Folders(i).Name + '\n'
-            res += recursive_menu(outlookFolderItem.Folders(i), '....'+indent, False,
-                                  pick_email, print_email_samples, move_to)
+            res += indent + f'{i}: {outlookFolderItem.Folders(i).Name}\n'
+            res += recursive_menu(outlookFolderItem.Folders(i), '....'+indent,
+                                  False, print_email_samples)
         except:
             pass
     
     if print_block:
         res += '#########################'
-    
     return res
 
 
-##########################
-
 def main():
-    
-    print('\n#########################')
-    print('###### EMAIL MOVER ######')
-    print('#########################\n')
-    
-    # Which mailbox?
-    print('Generating list of mailboxes accessible:')
-    themailboxes = list_mailboxes()
-    mailbox_num = input('\nWhich mailbox hierarchy should we export (Ex: "3")?     ')
-    mailbox_name = themailboxes[int(mailbox_num)]
-    print(f'Exporting hierarchy of mailbox: {mailbox_name} ...')
-    mailbox_hier_filename = export_mailbox_hierarchy(mailbox_name)
-    print(f'Mailbox hierarchy exported to: {mailbox_hier_filename}. Please check it.')
-    
-    # Select folder and list emails
-    print('\n##### SOURCE FOLDER #####')
-    mailbox_target_folder = input('In which folder are emails to move (Ex: "2 3 1")?     ')
-    namespace = win32.Dispatch("Outlook.Application").GetNamespace("MAPI")
-    mailbox = namespace.Folders(mailbox_name)
-    
-    target_folder = mailbox
-    for subfolder_num in mailbox_target_folder.split():
-        target_folder = target_folder.Folders(subfolder_num)
-        
-    print('Exporting list of emails...')
-    export_list_emails(target_folder)
-    
-    # Try to move an email
-    ex_email = target_folder.Items.GetFirst().Subject
-    subject_selected = input(f'\nHave a look at the list of emails. Which email do you want to move (Ex: "{ex_email}")?     ')
-    
-    print('\n##### DESTINATION FOLDER #####')
-    mailbox_num_moveto = input('To which mailbox move the email (Ex: "3")?     ')
-    mailbox_name_moveto = themailboxes[int(mailbox_num_moveto)]
-    
-    mailbox_moveto_folder = input('In which folder should emails be moved to (Ex: "2 5 1")?     ')
-    moveto_folder = namespace.Folders(mailbox_name)
-    for subfolder_num in mailbox_moveto_folder.split():
-        moveto_folder = moveto_folder.Folders(subfolder_num)
-    
-    for m in target_folder.Items:
-        if m.Subject == subject_selected:
-            print(f'Found: {subject_selected}')
-            m.Move(moveto_folder)
-            print(f'Email moved to: {moveto_folder.Name}')
-            break
-    
-    print('\n############################')
-    print('###### END OF PROGRAM ######')
-    print('############################\n\n')
-    time.sleep(3)
+    print()
+    print(''.center(WIDTH_ANNOUNCES, '#'))
+    print(' MS EMAIL INSIGHT '.center(WIDTH_ANNOUNCES, '#'))
+    print(''.center(WIDTH_ANNOUNCES, '#'))
+    main_menu()
+
 
 if __name__ == '__main__':
     main()
