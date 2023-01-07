@@ -169,7 +169,7 @@ def recursive_menu(outlookFolderItem, indent='', print_block=True, print_email_s
 def main():
     print()
     print(''.center(WIDTH_ANNOUNCES, '#'))
-    print(' MS EMAIL INSIGHT '.center(WIDTH_ANNOUNCES, '#'))
+    print(' OUTLOOK MINI-TOOLKIT '.center(WIDTH_ANNOUNCES, '#'))
     print(''.center(WIDTH_ANNOUNCES, '#'))
     main_menu()
 
